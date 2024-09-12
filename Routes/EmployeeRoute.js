@@ -23,9 +23,14 @@ router.post("/employee_login", async (req, res) => {
 });
 
 router.get('/detail/:id', async (req, res) => {
-  const employee = await Employee.findById(req.params.id);
-  return res.json(employee);
+  try {
+    const employee = await Employee.findById(req.params.id).populate('category_id');
+    return res.json(employee);
+  } catch (error) {
+    return res.status(500).json({ error: 'Failed to fetch employee details' });
+  }
 });
+
 
 router.get('/logout', (req, res) => {
   res.clearCookie('token');
