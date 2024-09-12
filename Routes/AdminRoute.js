@@ -6,6 +6,7 @@ import jwt from "jsonwebtoken";
 import multer from "multer";
 import path from "path";
 import Category from "../models/Category.js";
+import Payroll from "../models/Payroll.js";
 
 const router = express.Router();
 
@@ -251,6 +252,95 @@ router.post("/create_employee", upload.single("image"), async (req, res) => {
     });
   } catch (err) {
     return res.json({ Status: "Error", Error: err.message });
+  }
+});
+
+
+router.post("/add_payroll", async (req, res) => {
+  const { employee_id, salary, bonus, deductions, payment_date } = req.body;
+
+  // Validate required fields
+  if (!employee_id || !salary || !payment_date) {
+    return res.status(400).json({
+      Status: false,
+      Error: "Employee ID, Salary, and Payment Date are required fields",
+    });
+  }
+
+  try {
+    // Parse the payment date
+    const paymentDate = new Date(payment_date);
+    const startOfMonth = new Date(paymentDate.getFullYear(), paymentDate.getMonth(), 1);
+    const endOfMonth = new Date(paymentDate.getFullYear(), paymentDate.getMonth() + 1, 0);
+
+    // Check if payroll exists for the same employee and the same month
+    const existingPayroll = await Payroll.findOne({
+      employee_id, // Check for the same employee
+      payment_date: {
+        $gte: startOfMonth, // Start of the month
+        $lte: endOfMonth, // End of the month
+      },
+    });
+
+    if (existingPayroll) {
+      return res.status(400).json({
+        Status: false,
+        Error: "Payroll for this employee has already been added for this month.",
+      });
+    }
+
+    // Create a new payroll entry
+    const newPayroll = new Payroll({
+      employee_id,
+      salary,
+      bonus: bonus || 0,
+      deductions: deductions || 0,
+      payment_date: paymentDate,
+    });
+
+    // Save the payroll entry to the database
+    await newPayroll.save();
+
+    res.status(201).json({
+      Status: true,
+      Message: "Payroll added successfully",
+      Payroll: newPayroll,
+    });
+  } catch (error) {
+    console.error("Error adding payroll:", error.message);
+    res.status(500).json({
+      Status: false,
+      Error: "An error occurred while adding payroll. Please try again later.",
+    });
+  }
+});
+// Get All Payrolls Route
+router.get('/payrolls', async (req, res) => {
+  try {
+    // Fetch all payroll entries from the database
+    const payrolls = await Payroll.find().populate('employee_id', 'name email');
+
+    // If no payrolls found
+    if (!payrolls || payrolls.length === 0) {
+      return res.status(404).json({
+        Status: false,
+        Error: 'No payrolls found',
+      });
+    }
+
+    // Return the list of payrolls
+    return res.status(200).json({
+      Status: true,
+      Message: 'Payrolls retrieved successfully',
+      Result: payrolls,
+    });
+  } catch (error) {
+    // Catch server errors
+    return res.status(500).json({
+      Status: false,
+      Error: 'Server error while retrieving payrolls',
+      Details: error.message,
+    });
   }
 });
 
