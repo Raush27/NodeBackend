@@ -7,6 +7,8 @@ import multer from "multer";
 import path from "path";
 import Category from "../models/Category.js";
 import Payroll from "../models/Payroll.js";
+import Attendance from "../models/Attendance.js";
+import Leave from "../models/Leave.js";
 
 const router = express.Router();
 
@@ -115,6 +117,7 @@ router.post("/add_employee", upload.single("image"), async (req, res) => {
     return res.json({ Status: false, Error: err.message });
   }
 });
+
 router.get("/employee", async (req, res) => {
   try {
     const employees = await Employee.find().populate("category_id");
@@ -255,7 +258,6 @@ router.post("/create_employee", upload.single("image"), async (req, res) => {
   }
 });
 
-
 router.post("/add_payroll", async (req, res) => {
   const { employee_id, salary, bonus, deductions, payment_date } = req.body;
 
@@ -270,8 +272,16 @@ router.post("/add_payroll", async (req, res) => {
   try {
     // Parse the payment date
     const paymentDate = new Date(payment_date);
-    const startOfMonth = new Date(paymentDate.getFullYear(), paymentDate.getMonth(), 1);
-    const endOfMonth = new Date(paymentDate.getFullYear(), paymentDate.getMonth() + 1, 0);
+    const startOfMonth = new Date(
+      paymentDate.getFullYear(),
+      paymentDate.getMonth(),
+      1
+    );
+    const endOfMonth = new Date(
+      paymentDate.getFullYear(),
+      paymentDate.getMonth() + 1,
+      0
+    );
 
     // Check if payroll exists for the same employee and the same month
     const existingPayroll = await Payroll.findOne({
@@ -285,7 +295,8 @@ router.post("/add_payroll", async (req, res) => {
     if (existingPayroll) {
       return res.status(400).json({
         Status: false,
-        Error: "Payroll for this employee has already been added for this month.",
+        Error:
+          "Payroll for this employee has already been added for this month.",
       });
     }
 
@@ -315,38 +326,304 @@ router.post("/add_payroll", async (req, res) => {
   }
 });
 // Get All Payrolls Route
-router.get('/payrolls', async (req, res) => {
+router.get("/payrolls", async (req, res) => {
   try {
     // Fetch all payroll entries from the database
-    const payrolls = await Payroll.find().populate('employee_id', 'name email');
+    const payrolls = await Payroll.find().populate("employee_id", "name email");
 
     // If no payrolls found
     if (!payrolls || payrolls.length === 0) {
       return res.status(404).json({
         Status: false,
-        Error: 'No payrolls found',
+        Error: "No payrolls found",
       });
     }
 
     // Return the list of payrolls
     return res.status(200).json({
       Status: true,
-      Message: 'Payrolls retrieved successfully',
+      Message: "Payrolls retrieved successfully",
       Result: payrolls,
     });
   } catch (error) {
     // Catch server errors
     return res.status(500).json({
       Status: false,
-      Error: 'Server error while retrieving payrolls',
+      Error: "Server error while retrieving payrolls",
       Details: error.message,
     });
   }
 });
 
-router.get('/logout', (req, res) => {
-  res.clearCookie('token');
-  return res.json({Status: "Success"});
-})
+router.get("/payroll", async (req, res) => {
+  const { employee_id } = req.query;
+  try {
+    if (!employee_id) {
+      return res.status(400).json({
+        Status: false,
+        Error: "employee_id query parameter is required",
+      });
+    }
+
+    const payrolls = await Payroll.find({ employee_id }).populate(
+      "employee_id",
+      "name email designation department"
+    );
+
+    if (!payrolls || payrolls.length === 0) {
+      return res.status(404).json({
+        Status: false,
+        Error: "No payrolls found for the given employee_id",
+      });
+    }
+
+    return res.status(200).json({
+      Status: true,
+      Message: "Payrolls retrieved successfully",
+      Result: payrolls,
+    });
+  } catch (error) {
+    return res.status(500).json({
+      Status: false,
+      Error: "Server error while retrieving payrolls",
+      Details: error.message,
+    });
+  }
+});
+
+router.get("/logout", (req, res) => {
+  res.clearCookie("token");
+  return res.json({ Status: "Success" });
+});
+
+// Mark employee attendance
+router.post("/mark_attendance", async (req, res) => {
+  const { employee_id, date, status, remarks } = req.body;
+
+  // Input validation
+  if (!employee_id || !date || !status) {
+    return res.status(400).json({
+      Status: false,
+      Error: "Employee ID, Date, and Status are required fields.",
+    });
+  }
+
+  try {
+    // Check if attendance for this employee on this date already exists
+    const attendanceExists = await Attendance.findOne({
+      employee_id,
+      date: new Date(date).setHours(0, 0, 0, 0), // Check for exact date
+    });
+
+    if (attendanceExists) {
+      return res.status(400).json({
+        Status: false,
+        Error:
+          "Attendance for this employee has already been marked for this date.",
+      });
+    }
+
+    // Create a new attendance entry
+    const newAttendance = new Attendance({
+      employee_id,
+      date: new Date(date).setHours(0, 0, 0, 0), // Ensure time is normalized to the start of the day
+      status,
+      remarks: remarks || "", // Optional remarks
+    });
+
+    // Save attendance to the database
+    await newAttendance.save();
+
+    return res.status(201).json({
+      Status: true,
+      Message: "Attendance marked successfully",
+      Attendance: newAttendance,
+    });
+  } catch (error) {
+    console.error("Error marking attendance:", error);
+    return res.status(500).json({
+      Status: false,
+      Error:
+        "An error occurred while marking attendance. Please try again later.",
+    });
+  }
+});
+router.get("/attendance_report", async (req, res) => {
+  try {
+    // Fetch all attendance records and populate the employee details
+    const attendanceRecords = await Attendance.find()
+      .populate("employee_id", "name designation email") // Populate employee details
+      .sort({ date: -1 }); // Sort by date, newest first
+
+    // Check if any records are found
+    if (attendanceRecords.length === 0) {
+      return res.status(404).json({
+        status: false,
+        message: "No attendance records found.",
+      });
+    }
+
+    // Return the found records with employee data
+    return res.status(200).json({
+      status: true,
+      attendance: attendanceRecords,
+    });
+  } catch (error) {
+    console.error("Error fetching attendance report:", error);
+    return res.status(500).json({
+      status: false,
+      error:
+        "An error occurred while fetching the attendance report. Please try again later.",
+    });
+  }
+});
+
+router.get("/attendance_report/:employee_id", async (req, res) => {
+  const { employee_id } = req.params;
+  const { start_date, end_date } = req.query;
+  if (!employee_id) {
+    return res.status(400).json({
+      Status: false,
+      Error: "Employee ID is required.",
+    });
+  }
+  try {
+    const query = {
+      employee_id,
+    };
+    if (start_date && end_date) {
+      query.date = {
+        $gte: new Date(new Date(start_date).setHours(0, 0, 0, 0)),
+        $lte: new Date(new Date(end_date).setHours(23, 59, 59, 999)),
+      };
+    }
+    const attendanceRecords = await Attendance.find(query).sort({ date: -1 });
+    if (attendanceRecords.length === 0) {
+      return res.status(404).json({
+        Status: false,
+        Message: "No attendance records found for this employee.",
+      });
+    }
+
+    return res.status(200).json({
+      status: true,
+      attendance: attendanceRecords,
+    });
+  } catch (error) {
+    console.error("Error fetching attendance report:", error);
+    return res.status(500).json({
+      Status: false,
+      Error:
+        "An error occurred while fetching the attendance report. Please try again later.",
+    });
+  }
+});
+
+// Create a new leave request
+router.post("/apply_leave", async (req, res) => {
+  const { employee_id, start_date, end_date, leave_type } = req.body;
+
+  // Validate input
+  if (!employee_id || !start_date || !end_date || !leave_type) {
+    return res.status(400).json({
+      Status: false,
+      Error: "Employee ID, Start Date,leave_type, and End Date are required.",
+    });
+  }
+
+  try {
+    const newLeave = new Leave({
+      employee_id,
+      start_date,
+      end_date,
+      leave_type,
+    });
+    await newLeave.save();
+
+    return res.status(201).json({
+      Status: true,
+      Message: "Leave request created successfully",
+      Leave: newLeave,
+    });
+  } catch (error) {
+    return res.status(500).json({ Status: false, Error: error.message });
+  }
+});
+
+// Get all leave requests (Admin only)
+router.get("/leave", async (req, res) => {
+  try {
+    const leaves = await Leave.find().populate("employee_id", "name email");
+    return res.json({ Status: true, Result: leaves });
+  } catch (error) {
+    return res.status(500).json({ Status: false, Error: error.message });
+  }
+});
+router.get("/leave/:employee_id", async (req, res) => {
+  try {
+    const { employee_id } = req.params;
+    const leaves = await Leave.find({ employee_id }).populate(
+      "employee_id",
+      "name email"
+    );
+
+    if (leaves.length === 0) {
+      return res.json({
+        Status: false,
+        Error: "No leave records found for this employee.",
+      });
+    }
+
+    return res.json({ Status: true, Result: leaves });
+  } catch (error) {
+    return res.status(500).json({ Status: false, Error: error.message });
+  }
+});
+
+// Accept a leave request
+router.put("/leave/accept/:id", async (req, res) => {
+  const { remarks } = req.body;
+
+  try {
+    const updatedLeave = await Leave.findByIdAndUpdate(
+      req.params.id,
+      { status: "accepted", remarks },
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedLeave) {
+      return res
+        .status(404)
+        .json({ Status: false, Error: "Leave request not found" });
+    }
+
+    return res.json({ Status: true, Result: updatedLeave });
+  } catch (error) {
+    return res.status(500).json({ Status: false, Error: error.message });
+  }
+});
+
+// Reject a leave request
+router.put("/leave/reject/:id", async (req, res) => {
+  const { remarks } = req.body;
+
+  try {
+    const updatedLeave = await Leave.findByIdAndUpdate(
+      req.params.id,
+      { status: "rejected", remarks },
+      { new: true, runValidators: true }
+    );
+
+    if (!updatedLeave) {
+      return res
+        .status(404)
+        .json({ Status: false, Error: "Leave request not found" });
+    }
+
+    return res.json({ Status: true, Result: updatedLeave });
+  } catch (error) {
+    return res.status(500).json({ Status: false, Error: error.message });
+  }
+});
 
 export { router as adminRouter };
