@@ -24,12 +24,16 @@ router.post("/employee_login", async (req, res) => {
 
 router.get('/detail/:id', async (req, res) => {
   try {
-    const employee = await Employee.findById(req.params.id).populate('category_id');
+    const employee = await Employee.findById(req.params.id)
+      .select('-password') // Exclude the password field
+      .populate('category_id'); // Populate category data
+
     return res.json(employee);
   } catch (error) {
     return res.status(500).json({ error: 'Failed to fetch employee details' });
   }
 });
+
 
 
 router.get('/logout', (req, res) => {

@@ -106,6 +106,7 @@ router.post("/add_employee", upload.single("image"), async (req, res) => {
       salary: req.body.salary,
       image: req.file ? req.file.filename : undefined, // Handle image upload
       category_id: req.body.category_id,
+      status: req.body.status || "active", // Default to "active" if not provided
     });
 
     // Save the new employee to the database
@@ -117,6 +118,7 @@ router.post("/add_employee", upload.single("image"), async (req, res) => {
     return res.json({ Status: false, Error: err.message });
   }
 });
+
 
 router.get("/employee", async (req, res) => {
   try {
@@ -521,23 +523,42 @@ router.get("/attendance_report/:employee_id", async (req, res) => {
 
 // Create a new leave request
 router.post("/apply_leave", async (req, res) => {
-  const { employee_id, start_date, end_date, leave_type } = req.body;
+  const { employee_id, start_date, end_date, leave_type, reason, remarks } =
+    req.body;
 
   // Validate input
-  if (!employee_id || !start_date || !end_date || !leave_type) {
+  if (!employee_id || !start_date || !end_date || !leave_type || !reason) {
     return res.status(400).json({
       Status: false,
-      Error: "Employee ID, Start Date,leave_type, and End Date are required.",
+      Error:
+        "Employee ID, Start Date, leave_type, End Date, and Reason are required.",
     });
   }
 
   try {
+    // Check for overlapping leave for the same employee
+    const existingLeave = await Leave.findOne({
+      employee_id,
+      $or: [{ start_date: { $lte: end_date }, end_date: { $gte: start_date } }],
+    });
+
+    if (existingLeave) {
+      return res.status(400).json({
+        Status: false,
+        Error: "You have already applied for leave during this date.",
+      });
+    }
+
+    // Create a new leave request if no overlap is found
     const newLeave = new Leave({
       employee_id,
       start_date,
       end_date,
       leave_type,
+      reason,
+      remarks: remarks || "", // Initialize remarks with an empty string if not provided
     });
+
     await newLeave.save();
 
     return res.status(201).json({
