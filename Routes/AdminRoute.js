@@ -119,6 +119,37 @@ router.post("/add_employee", upload.single("image"), async (req, res) => {
   }
 });
 
+router.put("/update_employee_status/:id", async (req, res) => {
+  try {
+    const employeeId = req.params.id;
+    const statusValue = req.body.status;
+
+    // Validate the status value
+    if (statusValue !== 1 && statusValue !== 0) {
+      return res.json({ Status: false, Error: "Invalid status value, must be 1 or 0" });
+    }
+
+    const newStatus = statusValue === 1 ? "active" : "inactive";
+    const updatedEmployee = await Employee.findByIdAndUpdate(
+      employeeId,
+      { status: newStatus },
+      { new: true }
+    );
+
+    if (!updatedEmployee) {
+      return res.json({ Status: false, Error: "Employee not found" });
+    }
+
+    return res.json({ Status: true, Message: `Employee set to ${newStatus}`, Result: updatedEmployee });
+  } catch (err) {
+    console.error("Error updating employee status:", err);
+    return res.json({ Status: false, Error: err.message });
+  }
+});
+
+
+
+
 
 router.get("/employee", async (req, res) => {
   try {
@@ -161,18 +192,6 @@ router.put("/edit_employee/:id", async (req, res) => {
   }
 });
 
-// Delete employee by ID
-router.delete("/delete_employee/:id", async (req, res) => {
-  try {
-    const result = await Employee.findByIdAndDelete(req.params.id);
-    if (!result) {
-      return res.json({ Status: false, Error: "Employee not found" });
-    }
-    return res.json({ Status: true, Result: result });
-  } catch (err) {
-    return res.json({ Status: false, Error: "Query Error: " + err.message });
-  }
-});
 
 // Get count of admins
 router.get("/admin_count", async (req, res) => {
